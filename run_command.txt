@@ -1,2 +1,2 @@
-torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-XL/2 --data-path /vol/ideadata/ir27elyh/GPT-4V-In-Context-Learning/data/NCT-CRC-HE-100K-png --ckpt model/DiT-XL-2-256x256.pt 
+torchrun --nnodes=1 --nproc_per_node=2 train.py --model DiT-XL/2 --data-path  --ckpt model/DiT-XL-2-256x256.pt 
 --global-batch-size 64
