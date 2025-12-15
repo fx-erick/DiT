@@ -30,7 +30,49 @@ import os
 from models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
+from torch.utils.data import Dataset
+import cv2
+from download import find_model
 
+
+class CRC(Dataset):
+    def __init__(self, dir, aug=False):
+        
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            transforms.Resize(256)
+        ])
+
+        self.aug = aug
+        self.samples = [os.path.join(dir, f) for f in os.listdir(dir)
+         if os.path.isfile(os.path.join(dir, f))]
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        class_name = os.path.basename(self.samples[idx]).split('-')[0]
+        label = {
+            'ADI': 0,
+            'BACK': 1,
+            'DEB': 2,
+            'LYM': 3,
+            'MUC': 4,
+            'MUS': 5,
+            'NORM': 6,
+            'STR': 7,
+            'TUM': 8,
+        }
+
+        img = cv2.imread(self.samples[idx], -1)[:, :, ::-1]
+        img = np.float32(img) / 255.0
+
+        
+        img = np.uint8(np.clip(img, 0, 1) * 255.0)
+        img = self.transform(Image.fromarray(img))
+
+        return img, label[class_name]
 
 #################################################################################
 #                             Training Helper Functions                         #
@@ -143,6 +185,9 @@ def main(args):
         input_size=latent_size,
         num_classes=args.num_classes
     )
+    ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
+    state_dict = find_model(ckpt_path)
+    model.load_state_dict(state_dict)
     # Note that parameter initialization is done within the DiT constructor
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
@@ -161,7 +206,8 @@ def main(args):
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
     ])
-    dataset = ImageFolder(args.data_path, transform=transform)
+    dataset = CRC(dir=args.data_path, aug=True)
+    #dataset = ImageFolder(args.data_path, transform=transform)
     sampler = DistributedSampler(
         dataset,
         num_replicas=dist.get_world_size(),
@@ -265,5 +311,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
+    parser.add_argument("--ckpt", type=str, default=None,
+                        help="Optional path to a DiT checkpoint (default: auto-download a pre-trained DiT-XL/2 model).")
+
     args = parser.parse_args()
     main(args)
